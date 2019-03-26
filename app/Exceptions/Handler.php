@@ -4,6 +4,11 @@ namespace App\Exceptions;
 
 use Exception;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use App\Http\Exceptions\ManualException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Illuminate\Support\Facades\DB;
 
 class Handler extends ExceptionHandler
 {
@@ -46,6 +51,51 @@ class Handler extends ExceptionHandler
      */
     public function render($request, Exception $exception)
     {
+        DB::rollBack();
+
+        if (!env('APP_DEBUG')) {
+            var_dump($exception->getMessage()); die;
+            $code = $exception->getCode();
+
+            if ($request->pjax() || $request->wantsJson()) {
+                $error = $exception->getMessage();
+
+                $json = array(
+                    'code' => $code,
+                    'error' => $error,
+                    'message' => __("messages.$error")
+                );
+
+                return response()->json($json, $code);
+            } else {
+                if (!$exception instanceof ValidationException && !$exception instanceof UnauthorizedHttpException) {
+                    if ($exception instanceof ManualException) {
+                        $error = $exception->getMessage();
+                    } else {
+                        $error = 'SystemError';
+                    }
+
+                    $json = array(
+                        'code' => $code,
+                        'error' => $error,
+                        'message' => __("messages.$error")
+                    );
+
+                    return response()->json($json, $code);
+                }
+            }
+        } else {
+            $code = $exception->getCode();
+            $code = !$code ? JsonResponse::HTTP_BAD_REQUEST : $code;
+
+            $json = array(
+                'error' => addslashes($exception->getMessage()),
+                'trace' => $exception->getTraceAsString()
+            );
+
+            return response()->json($json, JsonResponse::HTTP_BAD_REQUEST);
+        }
+
         return parent::render($request, $exception);
     }
 }
